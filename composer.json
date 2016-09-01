@@ -1,0 +1,12 @@
+{
+    "name": "znddzxx112/dingtalk",
+    "description": "dingtalk server api php sdk",
+    "type": "library",
+    "authors": [
+        {
+            "name": "znddzxx112",
+            "email": "znddzxx112@163.com"
+        }
+    ],
+    "require": {}
+}

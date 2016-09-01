@@ -3,6 +3,8 @@
 include_once dirname(__FILE__)."/dingtalk/crypto/sha1.php";
 include_once dirname(__FILE__)."/dingtalk/crypto/pkcs7Encoder.php";
 include_once dirname(__FILE__)."/dingtalk/crypto/errorCode.php";
+require_once dirname(__FILE__)."/Curl.php";
+require_once dirname(__FILE__)."/Filecache.php";
 
 /**
 * 叮叮服务端sdk
@@ -55,8 +57,6 @@ class Dingtalk
 	private $appid='';
 	private $appsecret='';
 
-	private $ci;
-
 	/**
 	 * cache类型
 	 * file cache_service redis
@@ -64,16 +64,33 @@ class Dingtalk
 	 */
 	private $cache_type='file';
 
-	//CACHE_DINGTALK_CORP_ACCESS_TOKEN
+	private $curl = null;
+
+	private $filecache = null;
+
 	function __construct($conf='')
 	{
-		$this->ci = &get_instance();
 		if($conf!=''){
 			if(is_array($conf)){
 				foreach ($conf as $k => $v) {
 					isset($this->$k) && $this->$k = $v;
 				}
 			}
+		}
+		if($this->curl == null){
+			$this->curl = new Curl();
+		}
+		if($this->filecache == null){
+			$this->filecache = new Filecache(array('root_dir'=>dirname(__file__).'/../cache/'));
+		}
+	}
+	function __destruct()
+	{
+		if($this->curl != null){
+			$this->curl = null;
+		}
+		if($this->filecache == null){
+			$this->filecache = null;
 		}
 	}
 
@@ -319,12 +336,11 @@ class Dingtalk
 		$host = $this->host;
 		$url = 'media/get?access_token='.$accessToken.'&media_id='.$media_id;
 		$real_url = $host.'/'.$url;
-		$this->ci->load->library('curl');
-        $this->ci->curl->init();
-        $this->ci->curl->setOption(CURLOPT_FOLLOWLOCATION,true);//必须支持301 302 307
-        $file_info = $this->ci->curl->get($real_url);
+        $this->curl->init();
+        $this->curl->setOption(CURLOPT_FOLLOWLOCATION,true);//必须支持301 302 307
+        $file_info = $this->curl->get($real_url);
         // echo __line__.':'.$real_url;
-        $this->ci->curl->close();
+        $this->curl->close();
         $fileExt = $this->judge_file_type($file_info);
         $filename = $filename . "." . $fileExt;
         if (!file_exists($save_path)) {
@@ -569,30 +585,24 @@ class Dingtalk
 		$cache_type = $this->cache_type;
 		if('file'==$cache_type){
 			//file library
-			$this->ci->load->library('Filecache',array('root_dir'=>dirname(__file__).'/../cache/'));
-			return $this->ci->filecache->get($key,false,3600);//ttl 3600
+			return $this->filecache->get($key,false,3600);//ttl 3600
 		}elseif('redis'==$cache_type){
 			//redis library
-			$this->ci->load->library('rediscache');
-			return $this->ci->rediscache->get($key);
+
 		}else{
-			$this->ci->load->service('Cache_service');
-			return $this->ci->Cache_service->get(CACHE_DINGTALK,$key);
+			// system library
 		}	
 	}
 	public function setCache($key='',$val){
 		$cache_type = $this->cache_type;
 		if('file'==$cache_type){
 			//file library
-			$this->ci->load->library('Filecache',array('root_dir'=>dirname(__file__).'/../cache/'));
-			return $this->ci->filecache->save($key,$val);
+			return $this->filecache->save($key,$val);
 		}elseif('redis'==$cache_type){
 			//redis library
-			$this->ci->load->library('rediscache');
-			return $this->ci->rediscache->saveex($key,$val);
+
 		}else{
-			$this->ci->load->service('Cache_service');
-			$this->ci->Cache_service->save(array(CACHE_DINGTALK,$key,$val));
+			// system library
 		}
 	}
 	private function httpGet($url,$params=array()){
@@ -613,37 +623,24 @@ class Dingtalk
 		$host = $this->host;
 		$real_url = $host.'/'.$url;
 		// echo __line__.':'.$real_url;
-		$this->ci->load->library('curl');
-        $this->ci->curl->init();
+        $this->curl->init();
         $data = json_encode($params, JSON_UNESCAPED_UNICODE);//参数json
        	// var_dump($data);
-       	$this->ci->curl->setHeaders(array('Content-Type'=>'application/json'));
-        $result = $this->ci->curl->post($real_url, $data);
-        $this->ci->curl->close();
+       	$this->curl->setHeaders(array('Content-Type'=>'application/json'));
+        $result = $this->curl->post($real_url, $data);
+        $this->curl->close();
         return json_decode($result, TRUE);
 	}
 	private function httpRawPost($url,$media=array()){
 		$host = $this->host;
 		$real_url = $host.'/'.$url;
 		// echo __line__.':'.$real_url;
-		$this->ci->load->library('curl');
-        $this->ci->curl->init();
-        @$this->ci->curl->setHeaders(array('Content-Type'=>'multipart/form-data'));
-        $result = $this->ci->curl->post($real_url, $media);
-        $this->ci->curl->close();
+		$this->load->library('curl');
+        $this->curl->init();
+        @$this->curl->setHeaders(array('Content-Type'=>'multipart/form-data'));
+        $result = $this->curl->post($real_url, $media);
+        $this->curl->close();
         return json_decode($result, TRUE);
-     	// $curl = curl_init();
-	    // curl_setopt($curl, CURLOPT_URL, $real_url);
-	    // curl_setopt($curl, CURLOPT_SSL_VERIFYPEER, FALSE);
-	    // curl_setopt($curl, CURLOPT_SSL_VERIFYHOST, FALSE);
-	    // if (!empty($media)){
-	    //     curl_setopt($curl, CURLOPT_POST, 1);
-	    //     curl_setopt($curl, CURLOPT_POSTFIELDS, $media);
-	    // }
-	    // curl_setopt($curl, CURLOPT_RETURNTRANSFER, 1);
-	    // $output = curl_exec($curl);
-	    // curl_close($curl);
-	    // return json_decode($output, TRUE);
 	}
 	/**
      * 获取二进制头文件，从而得知属于什么类型文件
